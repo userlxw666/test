@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net"
+	"test1/pack"
 )
 
 type Request struct {
@@ -34,35 +35,54 @@ func main() {
 		}
 		clients[conn] = a
 		a++
-		go func() {
-			for {
-				var buf = make([]byte, 1024)
-				n, err := conn.Read(buf)
-				if err != nil {
-					fmt.Println(err)
-					return
-				}
-				req := &Request{
-					conn: conn,
-					msg:  buf[:n],
-				}
-				SendToQueue(req)
-			}
+		// reciver client msg
+		go StartRead(conn)
+		// send client msg
+		go SendMsg(conn)
+	}
+}
 
-		}()
-		go func() {
-			for {
-				select {
-				case msg := <-writeChan:
-					data := fmt.Sprintf("server receiver message，content ：%s", string(msg))
-					_, err := conn.Write([]byte(data))
-					if err != nil {
-						fmt.Println("send client msg error", err)
-						return
-					}
-				}
+func SendMsg(conn net.Conn) {
+	for {
+		select {
+		case <-writeChan:
+			data := fmt.Sprintf("server receiver message，content ：%s", "completed task")
+			_, err := conn.Write([]byte(data))
+			if err != nil {
+				fmt.Println("send client msg error", err)
+				return
 			}
-		}()
+		}
+	}
+}
+
+func StartRead(conn net.Conn) {
+	for {
+		dp := pack.NewPack()
+		dataHead := make([]byte, dp.GetHeadLen())
+		_, err := conn.Read(dataHead)
+		if err != nil {
+			fmt.Println("read head msg error", err)
+			return
+		}
+		msghead, err := dp.UnPack(dataHead)
+		if err != nil {
+			fmt.Println("unpack headmsg error", err)
+			return
+		}
+
+		msg := msghead.(*pack.Message)
+		msg.Data = make([]byte, msg.DataLen)
+		_, err = conn.Read(msg.Data)
+		if err != nil {
+			fmt.Println("read data error", err)
+			return
+		}
+		req := &Request{
+			conn: conn,
+			msg:  msg.Data,
+		}
+		SendToQueue(req)
 	}
 }
 
